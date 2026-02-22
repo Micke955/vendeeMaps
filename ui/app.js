@@ -33,6 +33,7 @@ import {
   orderBy,
   limit,
   startAfter,
+  getDoc,
   getDocs,
   setDoc,
   deleteDoc,
@@ -44,8 +45,9 @@ import {
 } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-firestore.js";
 import {
   getAuth,
-  signInAnonymously,
+  signInWithEmailAndPassword,
   onAuthStateChanged,
+  signOut,
 } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-auth.js";
 
 const SVG_PATH = "./Carte_des_communes_de_la_Vendée.svg";
@@ -92,6 +94,7 @@ const communesColRef = collection(db, "vendee_communes");
 const presenceColRef = collection(db, "vendee_presence");
 const historyColRef = collection(db, "vendee_history");
 const usersColRef = collection(db, "vendee_users");
+const profilesColRef = collection(db, "vendee_profiles");
 const state = createInitialState();
 
 const mapContainer = document.getElementById("mapContainer");
@@ -134,6 +137,16 @@ const resetViewBtn = document.getElementById("resetViewBtn");
 const toggleLeftPanelBtn = document.getElementById("toggleLeftPanelBtn");
 const toggleRightPanelBtn = document.getElementById("toggleRightPanelBtn");
 const actionsMore = document.querySelector(".actions-more");
+const loginOverlay = document.getElementById("loginOverlay");
+const loginForm = document.getElementById("loginForm");
+const loginEmailInput = document.getElementById("loginEmail");
+const loginPasswordInput = document.getElementById("loginPassword");
+const loginError = document.getElementById("loginError");
+const logoutBtn = document.getElementById("logoutBtn");
+const profileOverlay = document.getElementById("profileOverlay");
+const profileForm = document.getElementById("profileForm");
+const profileDisplayNameInput = document.getElementById("profileDisplayName");
+const profileError = document.getElementById("profileError");
 
 const infoName = document.getElementById("infoName");
 const infoInsee = document.getElementById("infoInsee");
@@ -149,6 +162,168 @@ const topSelectedBlock = document.querySelector(".top-selected");
 
 let contextMenuTarget = null;
 let firestoreSync = null;
+
+function setAppLocked(locked) {
+  document.body.classList.toggle("auth-locked", !!locked);
+}
+
+function updateAuthUIState() {
+  const isLoggedIn = !!auth.currentUser;
+  const needsProfile = isLoggedIn && !state.profileReady;
+  if (loginOverlay) loginOverlay.classList.toggle("hidden", isLoggedIn);
+  if (profileOverlay) profileOverlay.classList.toggle("hidden", !needsProfile);
+  if (logoutBtn) logoutBtn.classList.toggle("hidden", !isLoggedIn);
+  setAppLocked(!isLoggedIn || needsProfile);
+}
+
+function setForcedActiveUser(name) {
+  const normalized = normalizeUserName(name || "");
+  state.forcedActiveUserName = normalized;
+  if (normalized) {
+    localStorage.setItem(ACTIVE_USER_STORAGE_KEY, normalized);
+  } else {
+    localStorage.removeItem(ACTIVE_USER_STORAGE_KEY);
+  }
+}
+
+async function bootstrapProfile(user) {
+  if (!user || !user.uid) {
+    state.profileReady = false;
+    setForcedActiveUser("");
+    updateAuthUIState();
+    return;
+  }
+  try {
+    const profileRef = doc(profilesColRef, user.uid);
+    const snap = await getDoc(profileRef);
+    if (!snap.exists()) {
+      state.profileReady = false;
+      updateAuthUIState();
+      return;
+    }
+    const data = snap.data() || {};
+    const displayName = normalizeUserName(data.displayName || "");
+    if (!displayName) {
+      state.profileReady = false;
+      updateAuthUIState();
+      return;
+    }
+    setForcedActiveUser(displayName);
+    state.profileReady = true;
+    updateAuthUIState();
+    renderUsers();
+    updateCurrentUserBadge();
+  } catch (err) {
+    console.error("Profile bootstrap error:", err);
+    state.profileReady = false;
+    updateAuthUIState();
+    setSyncStatus("Erreur de profil", "error");
+  }
+}
+
+function handleSignedOut() {
+  state.authReady = false;
+  state.remoteReady = false;
+  if (state.metaUnsub) {
+    state.metaUnsub();
+    state.metaUnsub = null;
+  }
+  if (state.communesUnsub) {
+    state.communesUnsub();
+    state.communesUnsub = null;
+  }
+  if (state.usersUnsub) {
+    state.usersUnsub();
+    state.usersUnsub = null;
+  }
+  if (state.historyUnsub) {
+    state.historyUnsub();
+    state.historyUnsub = null;
+  }
+  state.profileReady = false;
+  setForcedActiveUser("");
+  state.connectedUsers = [];
+  renderConnectedUsers();
+  updateAuthUIState();
+}
+
+async function handleLogin(event) {
+  event.preventDefault();
+  if (!loginEmailInput || !loginPasswordInput) return;
+  const email = (loginEmailInput.value || "").trim();
+  const password = loginPasswordInput.value || "";
+  if (!email || !password) {
+    if (loginError) loginError.textContent = "Saisis un email et un mot de passe.";
+    return;
+  }
+  if (loginError) loginError.textContent = "";
+  try {
+    await signInWithEmailAndPassword(auth, email, password);
+  } catch (err) {
+    console.error("Auth login error:", err);
+    if (loginError) loginError.textContent = "Connexion refusée. Vérifie tes identifiants.";
+    setSyncStatus("Connexion refusée", "error");
+  }
+}
+
+function bindAuthUI() {
+  if (loginForm) loginForm.addEventListener("submit", handleLogin);
+  if (profileForm) {
+    profileForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const user = auth.currentUser;
+      if (!user || !user.uid) return;
+      const displayName = normalizeUserName(
+        profileDisplayNameInput ? profileDisplayNameInput.value || "" : ""
+      );
+      if (!displayName) {
+        if (profileError) profileError.textContent = "Prénom obligatoire.";
+        return;
+      }
+      if (profileError) profileError.textContent = "";
+      try {
+        await setDoc(
+          doc(profilesColRef, user.uid),
+          {
+            displayName,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          },
+          { merge: true }
+        );
+        setForcedActiveUser(displayName);
+        state.profileReady = true;
+        updateAuthUIState();
+        renderUsers();
+        updateCurrentUserBadge();
+        updatePresence();
+      } catch (err) {
+        console.error("Profile save error:", err);
+        if (profileError) profileError.textContent = "Impossible d'enregistrer le profil.";
+        setSyncStatus("Erreur profil", "error");
+      }
+    });
+  }
+  if (logoutBtn) {
+    logoutBtn.addEventListener("click", async () => {
+      try {
+        await signOut(auth);
+      } catch (err) {
+        console.error("Auth logout error:", err);
+        setSyncStatus("Erreur déconnexion", "error");
+      }
+    });
+  }
+  onAuthStateChanged(auth, (user) => {
+    if (!user) {
+      handleSignedOut();
+      return;
+    }
+    if (loginError) loginError.textContent = "";
+    bootstrapProfile(user);
+  });
+  updateAuthUIState();
+}
 
 function setCurrentCommune(el) {
   if (state.current && state.current !== el) {
@@ -506,7 +681,7 @@ function updateInfo(el) {
 }
 
 function getActiveUserName() {
-  return (activeUserSelect && activeUserSelect.value) || "";
+  return state.forcedActiveUserName || ((activeUserSelect && activeUserSelect.value) || "");
 }
 
 function getFilterDescriptor() {
@@ -733,16 +908,20 @@ function updateCurrentUserBadge() {
   if (!currentUserBadge) return;
   if (!state.authReady) {
     currentUserBadge.classList.add("hidden");
+    updateAuthUIState();
     return;
   }
   const name = getActiveUserName();
   if (!name) {
     currentUserBadge.classList.add("hidden");
+    updateAuthUIState();
     return;
   }
   const nameEl = currentUserBadge.querySelector(".user-badge-name");
-  if (nameEl) nameEl.textContent = name;
+  const uid = auth.currentUser && auth.currentUser.uid ? auth.currentUser.uid : "";
+  if (nameEl) nameEl.textContent = uid ? `${name} (${uid.slice(0, 6)})` : name;
   currentUserBadge.classList.remove("hidden");
+  updateAuthUIState();
 }
 
 function addHistory(entry) {
@@ -1082,8 +1261,22 @@ function renderUsers() {
       if (user.name === current || user.name === storedActive) opt.selected = true;
       activeUserSelect.appendChild(opt);
     });
-    if (!current && storedActive) {
-      activeUserSelect.value = storedActive;
+    if (state.forcedActiveUserName) {
+      const forced = state.forcedActiveUserName;
+      let forcedOption = [...activeUserSelect.options].find((opt) => opt.value === forced);
+      if (!forcedOption) {
+        forcedOption = document.createElement("option");
+        forcedOption.value = forced;
+        forcedOption.textContent = forced;
+        activeUserSelect.appendChild(forcedOption);
+      }
+      activeUserSelect.value = forced;
+      activeUserSelect.disabled = true;
+    } else {
+      if (!current && storedActive) {
+        activeUserSelect.value = storedActive;
+      }
+      activeUserSelect.disabled = false;
     }
   }
   if (filterUserSelect) {
@@ -2596,6 +2789,10 @@ function bindUI() {
 
   if (activeUserSelect) {
     activeUserSelect.addEventListener("change", () => {
+      if (state.forcedActiveUserName) {
+        activeUserSelect.value = state.forcedActiveUserName;
+        return;
+      }
       localStorage.setItem(ACTIVE_USER_STORAGE_KEY, getActiveUserName());
       updatePresence();
       updateCurrentUserBadge();
@@ -2837,7 +3034,6 @@ firestoreSync = createFirestoreSync({
     deleteField,
   },
   authApi: {
-    signInAnonymously,
     onAuthStateChanged,
   },
   helpers: {
@@ -2863,8 +3059,10 @@ firestoreSync = createFirestoreSync({
     serializeUsersById,
     deepEqualData,
     renderHistory,
+    handleSignedOut,
   },
 });
 
 bindUI();
+bindAuthUI();
 loadSvg();

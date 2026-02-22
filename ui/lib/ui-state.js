@@ -58,5 +58,7 @@ export function createInitialState() {
     historyLoadingMore: false,
     historyPageSize: 50,
     hasCommuneSnapshot: false,
+    forcedActiveUserName: "",
+    profileReady: false,
   };
 }

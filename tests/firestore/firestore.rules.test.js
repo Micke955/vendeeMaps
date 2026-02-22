@@ -9,6 +9,7 @@ import {
 import { doc, getDoc, setDoc } from "firebase/firestore";
 
 let testEnv;
+const AUTH_UID = "uid-test-1";
 
 describe("Firestore rules", () => {
   beforeAll(async () => {
@@ -30,7 +31,7 @@ describe("Firestore rules", () => {
   });
 
   it("autorise un write meta valide pour utilisateur authentifié", async () => {
-    const ctx = testEnv.authenticatedContext("u1");
+    const ctx = testEnv.authenticatedContext(AUTH_UID);
     const db = ctx.firestore();
     await assertSucceeds(
       setDoc(doc(db, "vendee", "state"), {
@@ -47,7 +48,7 @@ describe("Firestore rules", () => {
   });
 
   it("refuse un champ interdit dans meta", async () => {
-    const ctx = testEnv.authenticatedContext("u1");
+    const ctx = testEnv.authenticatedContext(AUTH_UID);
     const db = ctx.firestore();
     await assertFails(
       setDoc(doc(db, "vendee", "state"), {
@@ -59,7 +60,7 @@ describe("Firestore rules", () => {
   });
 
   it("refuse une version meta invalide", async () => {
-    const ctx = testEnv.authenticatedContext("u1");
+    const ctx = testEnv.authenticatedContext(AUTH_UID);
     const db = ctx.firestore();
     await assertFails(
       setDoc(doc(db, "vendee", "state"), {
@@ -72,7 +73,7 @@ describe("Firestore rules", () => {
   });
 
   it("autorise un document commune valide", async () => {
-    const ctx = testEnv.authenticatedContext("u1");
+    const ctx = testEnv.authenticatedContext(AUTH_UID);
     const db = ctx.firestore();
     await assertSucceeds(
       setDoc(doc(db, "vendee_communes", "85001"), {
@@ -86,7 +87,7 @@ describe("Firestore rules", () => {
   });
 
   it("autorise un document utilisateur valide", async () => {
-    const ctx = testEnv.authenticatedContext("u1");
+    const ctx = testEnv.authenticatedContext(AUTH_UID);
     const db = ctx.firestore();
     await assertSucceeds(
       setDoc(doc(db, "vendee_users", "u_abc12345"), {
@@ -101,7 +102,7 @@ describe("Firestore rules", () => {
   });
 
   it("refuse un document utilisateur invalide", async () => {
-    const ctx = testEnv.authenticatedContext("u1");
+    const ctx = testEnv.authenticatedContext(AUTH_UID);
     const db = ctx.firestore();
     await assertFails(
       setDoc(doc(db, "vendee_users", "bad-id"), {
@@ -112,7 +113,7 @@ describe("Firestore rules", () => {
   });
 
   it("autorise un event historique valide", async () => {
-    const ctx = testEnv.authenticatedContext("u1");
+    const ctx = testEnv.authenticatedContext(AUTH_UID);
     const db = ctx.firestore();
     await assertSucceeds(
       setDoc(doc(db, "vendee_history", "h_1700000000000_abcd12"), {
@@ -126,7 +127,7 @@ describe("Firestore rules", () => {
   });
 
   it("refuse un event historique invalide", async () => {
-    const ctx = testEnv.authenticatedContext("u1");
+    const ctx = testEnv.authenticatedContext(AUTH_UID);
     const db = ctx.firestore();
     await assertFails(
       setDoc(doc(db, "vendee_history", "bad-id"), {
@@ -137,7 +138,7 @@ describe("Firestore rules", () => {
   });
 
   it("refuse un document commune invalide (sector hors 1..9)", async () => {
-    const ctx = testEnv.authenticatedContext("u1");
+    const ctx = testEnv.authenticatedContext(AUTH_UID);
     const db = ctx.firestore();
     await assertFails(
       setDoc(doc(db, "vendee_communes", "85001"), {
@@ -150,7 +151,7 @@ describe("Firestore rules", () => {
   });
 
   it("refuse un code commune invalide", async () => {
-    const ctx = testEnv.authenticatedContext("u1");
+    const ctx = testEnv.authenticatedContext(AUTH_UID);
     const db = ctx.firestore();
     await assertFails(
       setDoc(doc(db, "vendee_communes", "ABC"), {
@@ -162,10 +163,10 @@ describe("Firestore rules", () => {
   });
 
   it("presence: autorise écriture sur son uid et refuse sur un autre", async () => {
-    const mine = testEnv.authenticatedContext("uid-mine");
+    const mine = testEnv.authenticatedContext(AUTH_UID);
     const mineDb = mine.firestore();
     await assertSucceeds(
-      setDoc(doc(mineDb, "vendee_presence", "uid-mine"), {
+      setDoc(doc(mineDb, "vendee_presence", AUTH_UID), {
         name: "Mine",
         lastSeen: new Date(),
       })
@@ -174,9 +175,33 @@ describe("Firestore rules", () => {
     const other = testEnv.authenticatedContext("uid-other");
     const otherDb = other.firestore();
     await assertFails(
-      setDoc(doc(otherDb, "vendee_presence", "uid-mine"), {
+      setDoc(doc(otherDb, "vendee_presence", AUTH_UID), {
         name: "Hack",
         lastSeen: new Date(),
+      })
+    );
+  });
+
+  it("profile: autorise création/maj sur son uid", async () => {
+    const mine = testEnv.authenticatedContext(AUTH_UID);
+    const mineDb = mine.firestore();
+    await assertSucceeds(
+      setDoc(doc(mineDb, "vendee_profiles", AUTH_UID), {
+        displayName: "Micka",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      })
+    );
+  });
+
+  it("profile: refuse écriture sur un autre uid", async () => {
+    const mine = testEnv.authenticatedContext(AUTH_UID);
+    const mineDb = mine.firestore();
+    await assertFails(
+      setDoc(doc(mineDb, "vendee_profiles", "uid-test-2"), {
+        displayName: "Hack",
+        createdAt: new Date(),
+        updatedAt: new Date(),
       })
     );
   });
@@ -198,7 +223,22 @@ describe("Firestore rules", () => {
         clientWriteId: "seed-1",
       });
     });
-    const authed = testEnv.authenticatedContext("u1");
+    const authed = testEnv.authenticatedContext(AUTH_UID);
     await expect(assertSucceeds(getDoc(doc(authed.firestore(), "vendee", "state")))).resolves.toBeDefined();
+  });
+
+  it("refuse lecture utilisateur non autorisé", async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), "vendee", "state"), {
+        historyById: {},
+        locks: {},
+        version: 1,
+        updatedAt: new Date(),
+        clientUpdatedAt: 1700000000000,
+        clientWriteId: "seed-2",
+      });
+    });
+    const authed = testEnv.authenticatedContext("uid-not-allowed");
+    await assertFails(getDoc(doc(authed.firestore(), "vendee", "state")));
   });
 });

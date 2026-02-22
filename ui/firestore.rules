@@ -18,6 +18,15 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    // Replace these UIDs with your 4 real Firebase Auth user UIDs before production use.
+    function allowedUids() {
+      return ['HBsAP3y6O3ULAJtn9dKLFZCvAIF2'];
+    }
+
+    function isAuthorizedUser() {
+      return isSignedIn() && request.auth.uid in allowedUids();
+    }
+
     function isString(value) {
       return value is string;
     }
@@ -129,6 +138,15 @@ service cloud.firestore {
       && (!('updatedBy' in data) || isShortString(data.updatedBy));
     }
 
+    function isValidProfileDoc(data) {
+      return data is map
+        && data.keys().hasOnly(['displayName', 'createdAt', 'updatedAt'])
+        && ('displayName' in data)
+        && isShortString(data.displayName)
+        && (!('createdAt' in data) || isTimestamp(data.createdAt))
+        && (!('updatedAt' in data) || isTimestamp(data.updatedAt));
+    }
+
     // Metadata schema for /vendee/state (communes are stored in /vendee_communes/{code})
     function isValidStateSchema(data) {
       return data.keys().hasOnly([
@@ -148,33 +166,33 @@ service cloud.firestore {
     }
 
     match /vendee/state {
-      allow read: if isSignedIn();
-      allow create, update: if isSignedIn() && isValidStateSchema(request.resource.data);
+      allow read: if isAuthorizedUser();
+      allow create, update: if isAuthorizedUser() && isValidStateSchema(request.resource.data);
       allow delete: if false;
     }
 
     // Collaborative model: one document per commune to reduce write conflicts.
     match /vendee_communes/{code} {
-      allow read: if isSignedIn();
-      allow create, update: if isSignedIn()
+      allow read: if isAuthorizedUser();
+      allow create, update: if isAuthorizedUser()
         && code.matches('^[0-9]{5}$')
         && isValidCommuneDoc(request.resource.data);
-      allow delete: if isSignedIn() && code.matches('^[0-9]{5}$');
+      allow delete: if isAuthorizedUser() && code.matches('^[0-9]{5}$');
     }
 
     // Users: one document per user to validate each entry strictly.
     match /vendee_users/{userId} {
-      allow read: if isSignedIn();
-      allow create, update: if isSignedIn()
+      allow read: if isAuthorizedUser();
+      allow create, update: if isAuthorizedUser()
         && userId.matches('^u_[A-Za-z0-9_-]{6,64}$')
         && isValidUserItem(request.resource.data);
-      allow delete: if isSignedIn() && userId.matches('^u_[A-Za-z0-9_-]{6,64}$');
+      allow delete: if isAuthorizedUser() && userId.matches('^u_[A-Za-z0-9_-]{6,64}$');
     }
 
     // Event log: one document per history item, paginated by createdAt.
     match /vendee_history/{historyId} {
-      allow read: if isSignedIn();
-      allow create, update: if isSignedIn()
+      allow read: if isAuthorizedUser();
+      allow create, update: if isAuthorizedUser()
         && historyId.matches('^h_[0-9]{13}_[A-Za-z0-9]{4,16}$')
         && isValidHistoryDoc(request.resource.data);
       allow delete: if false;
@@ -182,8 +200,17 @@ service cloud.firestore {
 
     // Presence: each client can only write its own uid document.
     match /vendee_presence/{uid} {
-      allow read: if isSignedIn();
-      allow create, update, delete: if isSignedIn() && request.auth.uid == uid;
+      allow read: if isAuthorizedUser();
+      allow create, update, delete: if isAuthorizedUser() && request.auth.uid == uid;
+    }
+
+    // Profile: each authorized user can manage only its own profile.
+    match /vendee_profiles/{uid} {
+      allow read: if isAuthorizedUser();
+      allow create, update: if isAuthorizedUser()
+        && request.auth.uid == uid
+        && isValidProfileDoc(request.resource.data);
+      allow delete: if false;
     }
   }
 }

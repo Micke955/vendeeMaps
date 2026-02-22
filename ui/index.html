@@ -22,6 +22,9 @@
             </div>
             <div id="syncStatus" class="sync-status" role="status" aria-live="polite" aria-atomic="true">Connexion…</div>
             <div id="lockStatus" class="lock-status hidden" role="status" aria-live="polite" aria-atomic="true"></div>
+            <button id="logoutBtn" class="btn small ghost hidden" type="button" aria-label="Se déconnecter">
+              Déconnexion
+            </button>
           </div>
         </div>
 
@@ -353,6 +356,30 @@
           </div>
         </aside>
       </main>
+    </div>
+
+    <div id="loginOverlay" class="login-overlay">
+      <form id="loginForm" class="login-card" autocomplete="on">
+        <h2>Connexion requise</h2>
+        <p>Connecte-toi avec ton compte autorisé.</p>
+        <label for="loginEmail" class="label">Email</label>
+        <input id="loginEmail" class="input" type="email" required autocomplete="username" />
+        <label for="loginPassword" class="label">Mot de passe</label>
+        <input id="loginPassword" class="input" type="password" required autocomplete="current-password" />
+        <button class="btn primary" type="submit">Se connecter</button>
+        <div id="loginError" class="hint error" role="alert" aria-live="polite"></div>
+      </form>
+    </div>
+
+    <div id="profileOverlay" class="login-overlay hidden">
+      <form id="profileForm" class="login-card" autocomplete="off">
+        <h2>Profil requis</h2>
+        <p>Renseigne ton prénom pour finaliser l'accès.</p>
+        <label for="profileDisplayName" class="label">Prénom</label>
+        <input id="profileDisplayName" class="input" type="text" required maxlength="40" />
+        <button class="btn primary" type="submit">Enregistrer</button>
+        <div id="profileError" class="hint error" role="alert" aria-live="polite"></div>
+      </form>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
