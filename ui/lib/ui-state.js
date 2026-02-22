@@ -1,0 +1,62 @@
+export const LOCK_TTL_MS = 45000;
+export const HISTORY_ACTIVE_WINDOW_DAYS = 90;
+
+export const ACTIVE_USER_STORAGE_KEY = "vendee.activeUser";
+export const THEME_STORAGE_KEY = "vendee.theme";
+export const PANEL_LAYOUT_STORAGE_KEY = "vendee.panelLayout";
+export const COLLAPSIBLE_SECTIONS_STORAGE_KEY = "vendee.collapsibleSections";
+
+export function createInitialState() {
+  return {
+    selectedSector: "",
+    usersQuickView: "all",
+    usersQuickSort: "alpha",
+    historyQuickFilter: "all",
+    statsQuickView: "all",
+    current: null,
+    communes: [],
+    byName: new Map(),
+    bySearch: new Map(),
+    byCode: new Map(),
+    byCodeEntry: new Map(),
+    panZoom: null,
+    users: [],
+    history: [],
+    isApplyingRemote: false,
+    saveTimer: null,
+    authReady: false,
+    pendingSave: false,
+    remoteReady: false,
+    lastWriteId: null,
+    lastWriteAt: 0,
+    remoteMetaVersion: 0,
+    owners: {},
+    presenceUnsub: null,
+    presenceTimer: null,
+    connectedUsers: [],
+    svg: null,
+    searchSuggestTimer: null,
+    syncStatusTimer: null,
+    undoStack: [],
+    redoStack: [],
+    locks: {},
+    lockHeartbeatTimer: null,
+    collabRefreshTimer: null,
+    metaUnsub: null,
+    communesUnsub: null,
+    historyUnsub: null,
+    usersUnsub: null,
+    remoteCommuneState: new Map(),
+    remoteCommuneMeta: new Map(),
+    remoteUsersState: new Map(),
+    remoteLocks: {},
+    historyById: {},
+    pendingHistoryWrites: [],
+    legacyUsersMigrated: false,
+    historyCursor: null,
+    historyHasMore: true,
+    historyLoadingMore: false,
+    historyPageSize: 50,
+    hasCommuneSnapshot: false,
+  };
+}

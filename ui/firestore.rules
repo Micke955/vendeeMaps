@@ -1,0 +1,189 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Safety bounds to reduce abuse / oversized documents.
+    function maxHistory() {
+      return 300;
+    }
+
+    function maxCommunesMapEntries() {
+      return 500;
+    }
+
+    function maxTextLen() {
+      return 200;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isString(value) {
+      return value is string;
+    }
+
+    function isNumber(value) {
+      return value is int || value is float;
+    }
+
+    function isTimestamp(value) {
+      return value is timestamp;
+    }
+
+    function isShortString(value) {
+      return isString(value) && value.size() > 0 && value.size() <= maxTextLen();
+    }
+
+    function isOptionalShortString(value) {
+      return value == null || (isString(value) && value.size() <= maxTextLen());
+    }
+
+    function isValidSectorsList(sectors) {
+      return sectors is list
+        && sectors.size() > 0
+        && sectors.size() <= 9
+        && sectors.hasOnly([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    }
+
+    function isValidUserItem(user) {
+      return user is map
+        && user.keys().hasOnly([
+          'name',
+          'sectors',
+          'anchorCode',
+          'anchorName',
+          'anchorLat',
+          'anchorLon'
+        ])
+        && ('name' in user)
+        && isShortString(user.name)
+        && ('sectors' in user)
+        && isValidSectorsList(user.sectors)
+        && (!('anchorCode' in user) || (isString(user.anchorCode) && user.anchorCode.matches('^[0-9]{5}$')))
+        && (!('anchorName' in user) || isOptionalShortString(user.anchorName))
+        && (!('anchorLat' in user) || isNumber(user.anchorLat))
+        && (!('anchorLon' in user) || isNumber(user.anchorLon));
+    }
+
+    function isValidHistoryItem(item) {
+      return item is map
+        && item.keys().hasOnly(['time', 'user', 'action'])
+        && ('time' in item) && isOptionalShortString(item.time)
+        && ('user' in item) && isOptionalShortString(item.user)
+        && ('action' in item) && isOptionalShortString(item.action);
+    }
+
+    function isValidHistoryDoc(item) {
+      return item is map
+        && item.keys().hasOnly(['time', 'user', 'action', 'createdAt', 'clientCreatedAt'])
+        && ('time' in item) && isOptionalShortString(item.time)
+        && ('user' in item) && isOptionalShortString(item.user)
+        && ('action' in item) && isOptionalShortString(item.action)
+        && (!('createdAt' in item) || isTimestamp(item.createdAt))
+        && (!('clientCreatedAt' in item) || (isNumber(item.clientCreatedAt) && item.clientCreatedAt > 0));
+    }
+
+    function isValidHistoryById(historyById) {
+      let keys = historyById.keys();
+      return historyById is map
+        && historyById.size() <= maxHistory()
+        // Firestore rules cannot iterate all dynamic map entries; validate shape and boundary entries.
+        && (keys.size() == 0 || (keys[0] is string
+          && keys[0].matches('^h_[0-9]{13}_[A-Za-z0-9]{4,16}$')
+          && isValidHistoryItem(historyById[keys[0]])))
+        && (keys.size() <= 1 || (keys[keys.size() - 1] is string
+          && keys[keys.size() - 1].matches('^h_[0-9]{13}_[A-Za-z0-9]{4,16}$')
+          && isValidHistoryItem(historyById[keys[keys.size() - 1]])));
+    }
+
+    function isValidDemarches(demarches) {
+      return demarches is map
+        && demarches.size() <= maxCommunesMapEntries();
+    }
+
+    function isValidLocks(locks) {
+      return locks is map
+        && locks.size() <= maxCommunesMapEntries();
+    }
+
+    function isValidDemarcheItem(demarche) {
+      return demarche is map
+        && demarche.keys().hasOnly(['by', 'at'])
+        && ('by' in demarche)
+        && isShortString(demarche.by)
+        && (!('at' in demarche) || isString(demarche.at) || isNumber(demarche.at));
+    }
+
+    function isValidCommuneDoc(data) {
+      return data.keys().hasOnly([
+        'sector',
+        'owner',
+        'demarche',
+        'updatedAt',
+        'updatedBy'
+      ])
+      && (!('sector' in data) || (isString(data.sector) && data.sector.matches('^[1-9]$')))
+      && (!('owner' in data) || isOptionalShortString(data.owner))
+      && (!('demarche' in data) || isValidDemarcheItem(data.demarche))
+      && (!('updatedAt' in data) || isTimestamp(data.updatedAt))
+      && (!('updatedBy' in data) || isShortString(data.updatedBy));
+    }
+
+    // Metadata schema for /vendee/state (communes are stored in /vendee_communes/{code})
+    function isValidStateSchema(data) {
+      return data.keys().hasOnly([
+        'historyById',
+        'locks',
+        'version',
+        'updatedAt',
+        'clientUpdatedAt',
+        'clientWriteId'
+      ])
+      && (!('historyById' in data) || isValidHistoryById(data.historyById))
+      && (!('locks' in data) || isValidLocks(data.locks))
+      && (!('version' in data) || (data.version is int && data.version >= 0))
+      && (!('updatedAt' in data) || isTimestamp(data.updatedAt))
+      && (!('clientUpdatedAt' in data) || (isNumber(data.clientUpdatedAt) && data.clientUpdatedAt > 0))
+      && (!('clientWriteId' in data) || isShortString(data.clientWriteId));
+    }
+
+    match /vendee/state {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn() && isValidStateSchema(request.resource.data);
+      allow delete: if false;
+    }
+
+    // Collaborative model: one document per commune to reduce write conflicts.
+    match /vendee_communes/{code} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn()
+        && code.matches('^[0-9]{5}$')
+        && isValidCommuneDoc(request.resource.data);
+      allow delete: if isSignedIn() && code.matches('^[0-9]{5}$');
+    }
+
+    // Users: one document per user to validate each entry strictly.
+    match /vendee_users/{userId} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn()
+        && userId.matches('^u_[A-Za-z0-9_-]{6,64}$')
+        && isValidUserItem(request.resource.data);
+      allow delete: if isSignedIn() && userId.matches('^u_[A-Za-z0-9_-]{6,64}$');
+    }
+
+    // Event log: one document per history item, paginated by createdAt.
+    match /vendee_history/{historyId} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn()
+        && historyId.matches('^h_[0-9]{13}_[A-Za-z0-9]{4,16}$')
+        && isValidHistoryDoc(request.resource.data);
+      allow delete: if false;
+    }
+
+    // Presence: each client can only write its own uid document.
+    match /vendee_presence/{uid} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isSignedIn() && request.auth.uid == uid;
+    }
+  }
+}

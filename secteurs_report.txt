@@ -1,0 +1,10 @@
+=== Génération secteurs.csv ===
+MODE=equal_count
+Seuils X: x1=-1.38 ; x2=-0.96
+
+Communes détectées: 258
+Secteur 1: 84
+Secteur 2: 86
+Secteur 3: 88
+Overrides appliqués: 2
+

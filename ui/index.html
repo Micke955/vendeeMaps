@@ -1,0 +1,361 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Vendée – Carte des communes</title>
+    <link rel="stylesheet" href="./style.css?v=20260222-10" />
+  </head>
+  <body>
+    <a class="skip-link" href="#mainContent">Aller au contenu principal</a>
+    <div class="app">
+      <header class="topbar">
+        <div class="topbar-head">
+          <div class="brand">
+            <div class="brand-title">Vendée</div>
+            <div class="brand-subtitle">Carte interactive des communes</div>
+          </div>
+          <div class="top-status">
+            <div id="currentUserBadge" class="user-badge hidden">
+              <span class="status-dot"></span>
+              <span class="user-badge-name">—</span>
+            </div>
+            <div id="syncStatus" class="sync-status" role="status" aria-live="polite" aria-atomic="true">Connexion…</div>
+            <div id="lockStatus" class="lock-status hidden" role="status" aria-live="polite" aria-atomic="true"></div>
+          </div>
+        </div>
+
+        <div class="topbar-groups">
+          <div class="top-block top-search">
+            <div class="selected-title">Recherche</div>
+            <div class="top-search-row">
+              <input
+                id="searchInput"
+                class="input"
+                type="text"
+                placeholder="Recherche commune…"
+                title="Saisir le nom ou le code INSEE d'une commune"
+                aria-label="Rechercher une commune par nom ou code INSEE"
+              />
+              <button id="searchBtn" class="btn" title="Centrer la commune recherchée" aria-label="Rechercher la commune saisie">
+                Rechercher
+              </button>
+            </div>
+            <div id="searchSuggestions" class="suggestions hidden"></div>
+          </div>
+
+          <div class="top-block top-selected">
+            <div class="selected-title">Commune sélectionnée</div>
+            <div id="infoName" class="selected-name">—</div>
+            <div id="infoInsee" class="selected-meta">INSEE: —</div>
+            <div id="infoSector" class="selected-meta">Secteur: —</div>
+            <div id="infoDistance" class="selected-meta" title="Distance à vol d'oiseau depuis l'ancrage">
+              Distance: —
+            </div>
+            <div id="infoDemarche" class="selected-meta">Démarchée: —</div>
+            <div id="infoCollab" class="selected-meta selected-collab">Collaboration: —</div>
+            <button id="toggleDemarcheBtn" class="btn small" title="Marquer ou retirer le statut démarchée" aria-label="Marquer ou retirer le statut démarchée de la commune sélectionnée">
+              Marquer démarchée
+            </button>
+          </div>
+
+          <div class="top-block top-actions">
+            <div class="selected-title">Actions</div>
+            <div class="top-actions-primary">
+              <button id="exportPdfMapBtn" class="btn action-btn primary" title="Exporter la carte en PDF" aria-label="Exporter la carte en PDF">
+                <span class="btn-icon" aria-hidden="true">PDF</span>
+                <span class="btn-label">Exporter carte</span>
+              </button>
+              <button id="undoBtn" class="btn action-btn ghost" title="Annuler la dernière action" aria-label="Annuler la dernière action">
+                <span class="btn-icon" aria-hidden="true">U</span>
+                <span class="btn-label">Annuler</span>
+              </button>
+              <button id="redoBtn" class="btn action-btn ghost" title="Rétablir la dernière action annulée" aria-label="Rétablir la dernière action">
+                <span class="btn-icon" aria-hidden="true">R</span>
+                <span class="btn-label">Rétablir</span>
+              </button>
+            </div>
+            <div class="top-actions-secondary">
+              <div class="theme-toggle" title="Basculer en mode sombre">
+                <span class="theme-label">Dark</span>
+                <label class="switch">
+                  <input id="themeToggle" type="checkbox" aria-label="Activer ou désactiver le mode sombre" />
+                  <span class="slider"></span>
+                </label>
+              </div>
+              <details class="actions-more">
+                <summary class="btn ghost" aria-label="Afficher les actions secondaires">Plus</summary>
+                <div class="actions-more-menu">
+                  <div class="kbd-help" role="note" aria-label="Raccourcis clavier">
+                    <div class="kbd-help-title">Raccourcis</div>
+                    <div class="kbd-help-row"><span class="kbd-key">Ctrl/Cmd + Z</span><span>Annuler</span></div>
+                    <div class="kbd-help-row"><span class="kbd-key">Ctrl/Cmd + Y</span><span>Rétablir</span></div>
+                    <div class="kbd-help-row"><span class="kbd-key">1 → 9</span><span>Secteur</span></div>
+                    <div class="kbd-help-row"><span class="kbd-key">/</span><span>Focus recherche</span></div>
+                    <div class="kbd-help-row"><span class="kbd-key">?</span><span>Aide raccourcis</span></div>
+                  </div>
+                  <button id="exportPdfReportBtn" class="btn small action-btn" title="Exporter un rapport PDF" aria-label="Exporter un rapport PDF">
+                    <span class="btn-icon" aria-hidden="true">PDF</span>
+                    <span class="btn-label">Exporter rapport</span>
+                  </button>
+                  <button id="exportCsvBtn" class="btn small action-btn" title="Exporter les données en CSV" aria-label="Exporter les données en CSV">
+                    <span class="btn-icon" aria-hidden="true">CSV</span>
+                    <span class="btn-label">Exporter CSV</span>
+                  </button>
+                  <button id="clearDemarchesBtn" class="btn small ghost" title="Retirer le statut démarchée sur toutes les communes" aria-label="Retirer le statut démarchée sur toutes les communes">
+                    Tout mettre en non démarchée
+                  </button>
+                  <button id="resetBtn" class="btn small ghost action-btn" title="Remettre toutes les communes à zéro" aria-label="Réinitialiser toutes les communes">
+                    <span class="btn-icon" aria-hidden="true">!</span>
+                    <span class="btn-label">Reset</span>
+                  </button>
+                  <button id="resetViewBtn" class="btn small ghost" title="Réinitialiser le cadrage de la carte" aria-label="Réinitialiser le cadrage de la carte">
+                    Réinitialiser vue
+                  </button>
+                </div>
+              </details>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <main class="main" id="mainContent">
+        <aside class="panel panel-left">
+          <div class="section collapsible-section" data-collapsible="users">
+            <button
+              class="section-toggle"
+              type="button"
+              data-toggle-section="users"
+              aria-expanded="true"
+              aria-controls="usersContent"
+            >
+              <span class="label">Utilisateurs</span>
+              <span class="section-toggle-icon" aria-hidden="true">▾</span>
+            </button>
+            <div id="usersContent" class="collapsible-content">
+              <div id="usersQuickChips" class="chips" aria-label="Filtres utilisateurs">
+                <button class="chip-btn active" type="button" data-user-view="all" aria-label="Afficher tous les utilisateurs">Tous</button>
+                <button class="chip-btn" type="button" data-user-view="busy" aria-label="Afficher les utilisateurs actifs">Actifs</button>
+                <button class="chip-btn" type="button" data-user-view="idle" aria-label="Afficher les utilisateurs sans commune">Sans commune</button>
+                <button class="chip-btn" type="button" data-user-sort="alpha" aria-label="Trier les utilisateurs par ordre alphabétique">A-Z</button>
+                <button class="chip-btn" type="button" data-user-sort="load" aria-label="Trier les utilisateurs par charge">Charge</button>
+              </div>
+              <label for="activeUserSelect" class="label">Utilisateur actif</label>
+              <select id="activeUserSelect" class="select">
+                <option value="">—</option>
+              </select>
+              <label for="sectorSelect" class="label">Secteur sélectionné</label>
+              <select id="sectorSelect" class="select">
+                <option value="">—</option>
+                <option value="1">Nord</option>
+                <option value="2">Nord-Est</option>
+                <option value="3">Est</option>
+                <option value="4">Sud-Est</option>
+                <option value="5">Sud</option>
+                <option value="6">Sud-Ouest</option>
+                <option value="7">Ouest</option>
+                <option value="8">Nord-Ouest</option>
+                <option value="9">Centre</option>
+              </select>
+              <div id="sectorRequiredBadge" class="hint error hidden">
+                Sélectionner un secteur pour colorier.
+              </div>
+              <div class="row">
+                <input
+                  id="userNameInput"
+                  class="input"
+                  type="text"
+                  placeholder="Prénom utilisateur"
+                  title="Prénom du nouvel utilisateur"
+                />
+                <button id="addUserBtn" class="btn" title="Ajouter l'utilisateur" aria-label="Ajouter l'utilisateur">
+                  Ajouter
+                </button>
+              </div>
+              <label for="anchorInput" class="label">Commune d'ancrage</label>
+              <input
+                id="anchorInput"
+                class="input"
+                type="text"
+                placeholder="Ex: LA ROCHE-SUR-YON"
+                title="Commune de reference pour les distances"
+              />
+              <div id="anchorSuggestions" class="suggestions hidden"></div>
+              <div class="hint">Tape un nom ou un code INSEE, puis choisis la commune.</div>
+              <div class="row">
+              </div>
+              <div id="usersList" class="users-list"></div>
+              <div class="label">Connectés</div>
+              <div id="connectedUsers" class="users-list"></div>
+            </div>
+          </div>
+
+          <div class="section collapsible-section" data-collapsible="filters">
+            <button
+              class="section-toggle"
+              type="button"
+              data-toggle-section="filters"
+              aria-expanded="true"
+              aria-controls="filtersContent"
+            >
+              <span class="label">Filtres</span>
+              <span class="section-toggle-icon" aria-hidden="true">▾</span>
+            </button>
+            <div id="filtersContent" class="collapsible-content">
+              <div id="filtersActiveBadge" class="hint hidden"></div>
+              <label for="filterSectorSelect" class="label">Par secteur</label>
+              <select id="filterSectorSelect" class="select">
+                <option value="all">Tous</option>
+                <option value="1">Nord</option>
+                <option value="2">Nord-Est</option>
+                <option value="3">Est</option>
+                <option value="4">Sud-Est</option>
+                <option value="5">Sud</option>
+                <option value="6">Sud-Ouest</option>
+                <option value="7">Ouest</option>
+                <option value="8">Nord-Ouest</option>
+                <option value="9">Centre</option>
+              </select>
+              <label for="filterUserSelect" class="label">Par utilisateur</label>
+              <select id="filterUserSelect" class="select">
+                <option value="all">Tous</option>
+              </select>
+              <label for="filterDemarcheSelect" class="label">Démarchage</label>
+              <select id="filterDemarcheSelect" class="select">
+                <option value="all">Tous</option>
+                <option value="yes">Démarchées</option>
+                <option value="no">Non démarchées</option>
+              </select>
+            </div>
+          </div>
+        </aside>
+
+        <section class="map-area">
+          <div class="map-toolbar">
+            <button id="toggleLeftPanelBtn" class="btn small ghost" type="button" title="Afficher/masquer le panneau gauche" aria-label="Afficher ou masquer le panneau gauche">
+              Masquer gauche
+            </button>
+            <button id="toggleRightPanelBtn" class="btn small ghost" type="button" title="Afficher/masquer le panneau droit" aria-label="Afficher ou masquer le panneau droit">
+              Masquer droite
+            </button>
+          </div>
+          <div id="mapContainer" class="map-container">
+            <div class="loading">Chargement de la carte…</div>
+          </div>
+          <div id="tooltip" class="tooltip hidden"></div>
+          <div id="communeContextMenu" class="context-menu hidden">
+            <button id="contextToggleDemarche" class="context-menu-item" type="button" aria-label="Marquer ou retirer le statut démarchée via le menu contextuel">
+              Marquer démarchée
+            </button>
+          </div>
+        </section>
+
+        <aside class="panel panel-right">
+          <div class="section collapsible-section" data-collapsible="history">
+            <button
+              class="section-toggle"
+              type="button"
+              data-toggle-section="history"
+              aria-expanded="true"
+              aria-controls="historyContent"
+            >
+              <span class="label">Historique</span>
+              <span class="section-toggle-icon" aria-hidden="true">▾</span>
+            </button>
+            <div id="historyContent" class="collapsible-content">
+              <div id="historyQuickChips" class="chips" aria-label="Filtres historique">
+                <button class="chip-btn active" type="button" data-history-filter="all" aria-label="Afficher tout l'historique">Tout</button>
+                <button class="chip-btn" type="button" data-history-filter="demarche" aria-label="Filtrer l'historique sur le démarchage">Démarchage</button>
+                <button class="chip-btn" type="button" data-history-filter="affect" aria-label="Filtrer l'historique sur les affectations">Affectation</button>
+                <button class="chip-btn" type="button" data-history-filter="system" aria-label="Filtrer l'historique système">Système</button>
+              </div>
+              <div id="historyList" class="history-list"></div>
+            </div>
+          </div>
+
+          <div class="section legend collapsible-section" data-collapsible="legend">
+            <button
+              class="section-toggle"
+              type="button"
+              data-toggle-section="legend"
+              aria-expanded="true"
+              aria-controls="legendContent"
+            >
+              <span class="label">Légende</span>
+              <span class="section-toggle-icon" aria-hidden="true">▾</span>
+            </button>
+            <div id="legendContent" class="collapsible-content">
+              <div class="legend-row" data-sector="1">
+                <span class="dot s1"></span> Nord
+              </div>
+              <div class="legend-row" data-sector="2">
+                <span class="dot s2"></span> Nord-Est
+              </div>
+              <div class="legend-row" data-sector="3">
+                <span class="dot s3"></span> Est
+              </div>
+              <div class="legend-row" data-sector="4">
+                <span class="dot s4"></span> Sud-Est
+              </div>
+              <div class="legend-row" data-sector="5">
+                <span class="dot s5"></span> Sud
+              </div>
+              <div class="legend-row" data-sector="6">
+                <span class="dot s6"></span> Sud-Ouest
+              </div>
+              <div class="legend-row" data-sector="7">
+                <span class="dot s7"></span> Ouest
+              </div>
+              <div class="legend-row" data-sector="8">
+                <span class="dot s8"></span> Nord-Ouest
+              </div>
+              <div class="legend-row" data-sector="9">
+                <span class="dot s9"></span> Centre
+              </div>
+            </div>
+          </div>
+
+          <div class="section collapsible-section" data-collapsible="userCounts">
+            <button
+              class="section-toggle"
+              type="button"
+              data-toggle-section="userCounts"
+              aria-expanded="true"
+              aria-controls="userCountsContent"
+            >
+              <span class="label">Communes par utilisateur</span>
+              <span class="section-toggle-icon" aria-hidden="true">▾</span>
+            </button>
+            <div id="userCountsContent" class="collapsible-content">
+              <div id="userCountsList" class="users-list"></div>
+            </div>
+          </div>
+          <div class="section collapsible-section" data-collapsible="stats">
+            <button
+              class="section-toggle"
+              type="button"
+              data-toggle-section="stats"
+              aria-expanded="true"
+              aria-controls="statsContent"
+            >
+              <span class="label">Statistiques</span>
+              <span class="section-toggle-icon" aria-hidden="true">▾</span>
+            </button>
+            <div id="statsContent" class="collapsible-content">
+              <div id="statsQuickChips" class="chips" aria-label="Filtres statistiques">
+                <button class="chip-btn active" type="button" data-stats-view="all" aria-label="Afficher toutes les statistiques utilisateurs">Tout</button>
+                <button class="chip-btn" type="button" data-stats-view="top5" aria-label="Afficher le top 5 des utilisateurs">Top 5</button>
+              </div>
+              <div id="statsSummary" class="stats-summary"></div>
+              <div id="statsSectorList" class="stats-list"></div>
+              <div id="statsUserProgress" class="stats-list"></div>
+            </div>
+          </div>
+        </aside>
+      </main>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+    <script type="module" src="./app.js?v=20260222-21"></script>
+  </body>
+</html>
