@@ -7,7 +7,9 @@
   },
   "main": "index.js",
   "scripts": {
-    "lint": "echo \"No lint configured\""
+    "lint": "echo \"No lint configured\"",
+    "cleanup:orphans:dry": "node scripts/cleanup-orphaned-communes.mjs",
+    "cleanup:orphans:apply": "node scripts/cleanup-orphaned-communes.mjs --apply"
   },
   "dependencies": {
     "firebase-admin": "^12.7.0",

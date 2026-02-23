@@ -26,7 +26,9 @@ export function createInitialState() {
     saveTimer: null,
     authReady: false,
     pendingSave: false,
+    saveInFlight: false,
     remoteReady: false,
+    metaWriteInFlight: false,
     lastWriteId: null,
     lastWriteAt: 0,
     remoteMetaVersion: 0,
@@ -60,5 +62,6 @@ export function createInitialState() {
     hasCommuneSnapshot: false,
     forcedActiveUserName: "",
     profileReady: false,
+    profileAnchor: null,
   };
 }

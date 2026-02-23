@@ -18,9 +18,15 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    // Replace these UIDs with your 4 real Firebase Auth user UIDs before production use.
+    // Authorized Firebase Auth UIDs.
     function allowedUids() {
-      return ['HBsAP3y6O3ULAJtn9dKLFZCvAIF2'];
+      return [
+        'PciCJms31tO5w6AldVEdH6Ny0hl2',
+        'itQqRvlFWJbDHgn5yCKUrJDFGS03',
+        'QHUyZqPuH3gdWis3ZJyPnvy7JrV2',
+        'Wly0ccCX8eX9VcHPLOghZJdV1fW2',
+        'HBsAP3y6O3ULAJtn9dKLFZCvAIF2'
+      ];
     }
 
     function isAuthorizedUser() {
@@ -140,9 +146,23 @@ service cloud.firestore {
 
     function isValidProfileDoc(data) {
       return data is map
-        && data.keys().hasOnly(['displayName', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly([
+          'displayName',
+          'createdAt',
+          'updatedAt',
+          'selectedSector',
+          'anchorCode',
+          'anchorName',
+          'anchorLat',
+          'anchorLon'
+        ])
         && ('displayName' in data)
         && isShortString(data.displayName)
+        && (!('selectedSector' in data) || (isString(data.selectedSector) && data.selectedSector.matches('^[1-9]$')))
+        && (!('anchorCode' in data) || (isString(data.anchorCode) && data.anchorCode.matches('^[0-9]{5}$')))
+        && (!('anchorName' in data) || isOptionalShortString(data.anchorName))
+        && (!('anchorLat' in data) || isNumber(data.anchorLat))
+        && (!('anchorLon' in data) || isNumber(data.anchorLon))
         && (!('createdAt' in data) || isTimestamp(data.createdAt))
         && (!('updatedAt' in data) || isTimestamp(data.updatedAt));
     }
@@ -155,14 +175,23 @@ service cloud.firestore {
         'version',
         'updatedAt',
         'clientUpdatedAt',
-        'clientWriteId'
+        'clientWriteId',
+        // Legacy keys kept for backward compatibility with older deployments.
+        'users',
+        'history',
+        'communes',
+        'usersById'
       ])
       && (!('historyById' in data) || isValidHistoryById(data.historyById))
       && (!('locks' in data) || isValidLocks(data.locks))
       && (!('version' in data) || (data.version is int && data.version >= 0))
       && (!('updatedAt' in data) || isTimestamp(data.updatedAt))
       && (!('clientUpdatedAt' in data) || (isNumber(data.clientUpdatedAt) && data.clientUpdatedAt > 0))
-      && (!('clientWriteId' in data) || isShortString(data.clientWriteId));
+      && (!('clientWriteId' in data) || isShortString(data.clientWriteId))
+      && (!('users' in data) || data.users is list)
+      && (!('history' in data) || data.history is list)
+      && (!('communes' in data) || data.communes is map)
+      && (!('usersById' in data) || data.usersById is map);
     }
 
     match /vendee/state {
@@ -184,9 +213,8 @@ service cloud.firestore {
     match /vendee_users/{userId} {
       allow read: if isAuthorizedUser();
       allow create, update: if isAuthorizedUser()
-        && userId.matches('^u_[A-Za-z0-9_-]{6,64}$')
         && isValidUserItem(request.resource.data);
-      allow delete: if isAuthorizedUser() && userId.matches('^u_[A-Za-z0-9_-]{6,64}$');
+      allow delete: if isAuthorizedUser();
     }
 
     // Event log: one document per history item, paginated by createdAt.

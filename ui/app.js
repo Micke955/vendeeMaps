@@ -46,6 +46,7 @@ import {
 import {
   getAuth,
   signInWithEmailAndPassword,
+  sendPasswordResetEmail,
   onAuthStateChanged,
   signOut,
 } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-auth.js";
@@ -53,15 +54,15 @@ import {
 const SVG_PATH = "./Carte_des_communes_de_la_Vendée.svg";
 
 const sectorColors = {
-  1: "#e34a4a", // Nord
-  2: "#f08d49", // Nord-Est
-  3: "#f3d14a", // Est
-  4: "#5fd35f", // Sud-Est
-  5: "#38c9c9", // Sud
-  6: "#3d7cff", // Sud-Ouest
-  7: "#6a5bd5", // Ouest
-  8: "#b04ce0", // Nord-Ouest
-  9: "#c2c8d6", // Centre
+  1: "#D55E00", // Nord
+  2: "#E69F00", // Nord-Est
+  3: "#F0E442", // Est
+  4: "#009E73", // Sud-Est
+  5: "#56B4E9", // Sud
+  6: "#0072B2", // Sud-Ouest
+  7: "#CC79A7", // Ouest
+  8: "#A65628", // Nord-Ouest
+  9: "#7F8C8D", // Centre
 };
 
 const sectorLabels = {
@@ -133,6 +134,8 @@ const statsSummary = document.getElementById("statsSummary");
 const statsSectorList = document.getElementById("statsSectorList");
 const statsUserProgress = document.getElementById("statsUserProgress");
 const sectorRequiredBadge = document.getElementById("sectorRequiredBadge");
+const confirmSectorBtn = document.getElementById("confirmSectorBtn");
+const confirmAnchorBtn = document.getElementById("confirmAnchorBtn");
 const resetViewBtn = document.getElementById("resetViewBtn");
 const toggleLeftPanelBtn = document.getElementById("toggleLeftPanelBtn");
 const toggleRightPanelBtn = document.getElementById("toggleRightPanelBtn");
@@ -141,6 +144,8 @@ const loginOverlay = document.getElementById("loginOverlay");
 const loginForm = document.getElementById("loginForm");
 const loginEmailInput = document.getElementById("loginEmail");
 const loginPasswordInput = document.getElementById("loginPassword");
+const forgotPasswordBtn = document.getElementById("forgotPasswordBtn");
+const loginInfo = document.getElementById("loginInfo");
 const loginError = document.getElementById("loginError");
 const logoutBtn = document.getElementById("logoutBtn");
 const profileOverlay = document.getElementById("profileOverlay");
@@ -162,6 +167,10 @@ const topSelectedBlock = document.querySelector(".top-selected");
 
 let contextMenuTarget = null;
 let firestoreSync = null;
+const PROFILE_PREFS_STORAGE_PREFIX = "vendee-profile-prefs:";
+let fastLockSyncTimer = null;
+let fastLockSyncInFlight = false;
+let metaWritePromise = null;
 
 function setAppLocked(locked) {
   document.body.classList.toggle("auth-locked", !!locked);
@@ -186,6 +195,125 @@ function setForcedActiveUser(name) {
   }
 }
 
+function isValidSectorValue(value) {
+  return /^[1-9]$/.test(String(value || ""));
+}
+
+function getProfilePrefsStorageKey(uid) {
+  return `${PROFILE_PREFS_STORAGE_PREFIX}${uid || ""}`;
+}
+
+function readLocalProfilePrefs(uid) {
+  if (!uid) return {};
+  try {
+    const raw = localStorage.getItem(getProfilePrefsStorageKey(uid));
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeLocalProfilePrefs(uid, patch) {
+  if (!uid || !patch || typeof patch !== "object") return;
+  const current = readLocalProfilePrefs(uid);
+  localStorage.setItem(
+    getProfilePrefsStorageKey(uid),
+    JSON.stringify({ ...current, ...patch })
+  );
+}
+
+function setProfileAnchor(entry) {
+  if (!entry || !entry.geo || !entry.code || !entry.name) {
+    state.profileAnchor = null;
+    return;
+  }
+  state.profileAnchor = {
+    code: entry.code,
+    name: entry.name,
+    lat: entry.geo.lat,
+    lon: entry.geo.lon,
+  };
+}
+
+function getCurrentUserAnchor() {
+  if (
+    state.profileAnchor &&
+    Number.isFinite(state.profileAnchor.lat) &&
+    Number.isFinite(state.profileAnchor.lon)
+  ) {
+    return { lat: state.profileAnchor.lat, lon: state.profileAnchor.lon };
+  }
+  const activeUser = getActiveUserName();
+  const user = state.users.find((u) => u.name === activeUser);
+  return user ? getUserAnchor(user) : null;
+}
+
+function getCommuneEntryFromInput(value) {
+  const raw = (value || "").trim();
+  if (!raw) return null;
+  let code = "";
+  const parsed = parseId(raw);
+  if (parsed && parsed.code) {
+    code = parsed.code;
+  } else if (/^\d{5}$/.test(raw)) {
+    code = raw;
+  } else {
+    const el = findCommune(raw);
+    if (!el) return null;
+    code = el.getAttribute("data-code") || "";
+  }
+  return state.byCodeEntry.get(code) || null;
+}
+
+async function saveProfileAnchor(entry) {
+  const user = auth.currentUser;
+  if (!user || !user.uid || !entry || !entry.geo) return;
+  await setDoc(
+    doc(profilesColRef, user.uid),
+    {
+      anchorCode: entry.code,
+      anchorName: entry.name,
+      anchorLat: entry.geo.lat,
+      anchorLon: entry.geo.lon,
+      updatedAt: serverTimestamp(),
+    },
+    { merge: true }
+  );
+  writeLocalProfilePrefs(user.uid, {
+    anchorCode: entry.code,
+    anchorName: entry.name,
+    anchorLat: entry.geo.lat,
+    anchorLon: entry.geo.lon,
+  });
+  setProfileAnchor(entry);
+  if (anchorInput) anchorInput.value = entry.name;
+  if (state.current) updateInfo(state.current);
+}
+
+async function saveProfileSector(sectorValue) {
+  const user = auth.currentUser;
+  if (!user || !user.uid || !isValidSectorValue(sectorValue)) return;
+  await setDoc(
+    doc(profilesColRef, user.uid),
+    {
+      selectedSector: String(sectorValue),
+      updatedAt: serverTimestamp(),
+    },
+    { merge: true }
+  );
+  writeLocalProfilePrefs(user.uid, {
+    selectedSector: String(sectorValue),
+  });
+  state.selectedSector = String(sectorValue);
+  if (sectorSelect) sectorSelect.value = state.selectedSector;
+  updateSectorSelectAvailability();
+  updateLegendActive();
+  updateSectorRequiredBadge();
+  if (state.current) updateInfo(state.current);
+}
+
 async function bootstrapProfile(user) {
   if (!user || !user.uid) {
     state.profileReady = false;
@@ -196,6 +324,7 @@ async function bootstrapProfile(user) {
   try {
     const profileRef = doc(profilesColRef, user.uid);
     const snap = await getDoc(profileRef);
+    const localPrefs = readLocalProfilePrefs(user.uid);
     if (!snap.exists()) {
       state.profileReady = false;
       updateAuthUIState();
@@ -209,6 +338,45 @@ async function bootstrapProfile(user) {
       return;
     }
     setForcedActiveUser(displayName);
+    const remoteSector = isValidSectorValue(data.selectedSector) ? String(data.selectedSector) : "";
+    const localSector = isValidSectorValue(localPrefs.selectedSector) ? String(localPrefs.selectedSector) : "";
+    const profileSector = remoteSector || localSector;
+    state.selectedSector = profileSector;
+    if (sectorSelect) sectorSelect.value = profileSector;
+    if (
+      typeof data.anchorCode === "string" &&
+      data.anchorCode &&
+      Number.isFinite(data.anchorLat) &&
+      Number.isFinite(data.anchorLon)
+    ) {
+      state.profileAnchor = {
+        code: data.anchorCode,
+        name: typeof data.anchorName === "string" ? data.anchorName : "",
+        lat: Number(data.anchorLat),
+        lon: Number(data.anchorLon),
+      };
+      if (anchorInput && state.profileAnchor.name) {
+        anchorInput.value = state.profileAnchor.name;
+      }
+    } else if (
+      typeof localPrefs.anchorCode === "string" &&
+      localPrefs.anchorCode &&
+      Number.isFinite(localPrefs.anchorLat) &&
+      Number.isFinite(localPrefs.anchorLon)
+    ) {
+      state.profileAnchor = {
+        code: localPrefs.anchorCode,
+        name: typeof localPrefs.anchorName === "string" ? localPrefs.anchorName : "",
+        lat: Number(localPrefs.anchorLat),
+        lon: Number(localPrefs.anchorLon),
+      };
+      if (anchorInput && state.profileAnchor.name) {
+        anchorInput.value = state.profileAnchor.name;
+      }
+    } else {
+      state.profileAnchor = null;
+      if (anchorInput) anchorInput.value = "";
+    }
     state.profileReady = true;
     updateAuthUIState();
     renderUsers();
@@ -241,6 +409,9 @@ function handleSignedOut() {
     state.historyUnsub = null;
   }
   state.profileReady = false;
+  state.profileAnchor = null;
+  state.selectedSector = "";
+  if (sectorSelect) sectorSelect.value = "";
   setForcedActiveUser("");
   state.connectedUsers = [];
   renderConnectedUsers();
@@ -256,6 +427,7 @@ async function handleLogin(event) {
     if (loginError) loginError.textContent = "Saisis un email et un mot de passe.";
     return;
   }
+  if (loginInfo) loginInfo.textContent = "";
   if (loginError) loginError.textContent = "";
   try {
     await signInWithEmailAndPassword(auth, email, password);
@@ -266,8 +438,33 @@ async function handleLogin(event) {
   }
 }
 
+async function handleForgotPassword(event) {
+  event.preventDefault();
+  if (!loginEmailInput) return;
+  const email = (loginEmailInput.value || "").trim();
+  if (loginInfo) loginInfo.textContent = "";
+  if (loginError) loginError.textContent = "";
+  if (!email) {
+    if (loginError) loginError.textContent = "Saisis ton email pour recevoir le lien de réinitialisation.";
+    return;
+  }
+  if (forgotPasswordBtn) forgotPasswordBtn.disabled = true;
+  try {
+    await sendPasswordResetEmail(auth, email);
+    if (loginInfo) loginInfo.textContent = "Email de réinitialisation envoyé. Vérifie ta boîte mail.";
+    setSyncStatus("Email de réinitialisation envoyé", "ok");
+  } catch (err) {
+    console.error("Auth reset password error:", err);
+    if (loginError) loginError.textContent = "Impossible d'envoyer l'email de réinitialisation.";
+    setSyncStatus("Erreur réinitialisation", "error");
+  } finally {
+    if (forgotPasswordBtn) forgotPasswordBtn.disabled = false;
+  }
+}
+
 function bindAuthUI() {
   if (loginForm) loginForm.addEventListener("submit", handleLogin);
+  if (forgotPasswordBtn) forgotPasswordBtn.addEventListener("click", handleForgotPassword);
   if (profileForm) {
     profileForm.addEventListener("submit", async (event) => {
       event.preventDefault();
@@ -282,13 +479,17 @@ function bindAuthUI() {
       }
       if (profileError) profileError.textContent = "";
       try {
+        const profileData = {
+          displayName,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        };
+        if (isValidSectorValue(state.selectedSector)) {
+          profileData.selectedSector = String(state.selectedSector);
+        }
         await setDoc(
           doc(profilesColRef, user.uid),
-          {
-            displayName,
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-          },
+          profileData,
           { merge: true }
         );
         setForcedActiveUser(displayName);
@@ -319,6 +520,7 @@ function bindAuthUI() {
       handleSignedOut();
       return;
     }
+    if (loginInfo) loginInfo.textContent = "";
     if (loginError) loginError.textContent = "";
     bootstrapProfile(user);
   });
@@ -653,9 +855,7 @@ function updateInfo(el) {
     infoSector.textContent = `Secteur: ${sectorLabels[sector] || sector}`;
   }
   if (infoDistance) {
-    const activeUser = getActiveUserName();
-    const user = state.users.find((u) => u.name === activeUser);
-    const anchor = user ? getUserAnchor(user) : null;
+    const anchor = getCurrentUserAnchor();
     const code = el.getAttribute("data-code") || "";
     const entry = state.byCodeEntry.get(code);
     if (anchor && entry && entry.geo) {
@@ -738,24 +938,48 @@ function clearExpiredLocks(options = { save: false }) {
       changed = true;
     }
   });
-  if (changed && options.save) scheduleSave();
+  if (changed && options.save) scheduleFastLockSync();
+}
+
+function scheduleFastLockSync() {
+  if (state.isApplyingRemote || !state.authReady || !state.remoteReady || !firestoreSync) {
+    return;
+  }
+  if (fastLockSyncTimer) clearTimeout(fastLockSyncTimer);
+  fastLockSyncTimer = setTimeout(async () => {
+    if (fastLockSyncInFlight) return;
+    fastLockSyncInFlight = true;
+    try {
+      await saveMetaState();
+    } catch (err) {
+      const code = err && err.code ? String(err.code) : "";
+      if (code === "conflict-version") {
+        // Fallback to full save cycle if versions diverged.
+        state.pendingSave = true;
+        scheduleSave();
+      }
+    } finally {
+      fastLockSyncInFlight = false;
+    }
+  }, 60);
 }
 
 function applyLockVisuals() {
   const activeUser = getActiveUserName();
   clearExpiredLocks();
-  const lockedByOthers = [];
+  const selectedCode = state.current ? (state.current.getAttribute("data-code") || "") : "";
+  let selectedLockByOther = null;
   state.communes.forEach((entry) => {
     const lock = getLockEntry(entry.code);
     const lockedByOther =
       !!lock && lock.by && lock.by !== activeUser;
     entry.element.classList.toggle("locked-by-other", lockedByOther);
-    if (lockedByOther) {
+    if (lockedByOther && selectedCode && entry.code === selectedCode) {
       const label = `${entry.name} (${entry.code})`;
-      lockedByOthers.push({ by: lock.by, label, at: lock.at });
+      selectedLockByOther = { by: lock.by, label, at: lock.at };
     }
   });
-  renderLockStatus(lockedByOthers);
+  renderLockStatus(selectedLockByOther ? [selectedLockByOther] : []);
   if (state.current) updateInfo(state.current);
 }
 
@@ -782,14 +1006,24 @@ function lockCommuneForActiveUser(el, options = { save: true }) {
   const code = el.getAttribute("data-code") || "";
   if (!code) return true;
   const lock = getLockEntry(code);
+  const hasSector = !!(el.getAttribute("data-sector") || "");
+  const hasOwner = !!(el.getAttribute("data-owner") || "");
+  const isUnassigned = !hasSector && !hasOwner;
   if (lock && lock.by && lock.by !== activeUser) {
+    // If commune is currently unassigned, allow immediate takeover to avoid stale lock friction.
+    if (isUnassigned) {
+      state.locks[code] = { by: activeUser, at: Date.now() };
+      applyLockVisuals();
+      if (options.save) scheduleFastLockSync();
+      return true;
+    }
     setSyncStatus(`Commune en édition par ${lock.by}`, "error");
     applyLockVisuals();
     return false;
   }
   state.locks[code] = { by: activeUser, at: Date.now() };
   applyLockVisuals();
-  if (options.save) scheduleSave();
+  if (options.save) scheduleFastLockSync();
   return true;
 }
 
@@ -800,7 +1034,7 @@ function releaseLockForCode(code, options = { save: true }) {
   if (!lock || (lock.by && activeUser && lock.by !== activeUser)) return;
   delete state.locks[code];
   applyLockVisuals();
-  if (options.save) scheduleSave();
+  if (options.save) scheduleFastLockSync();
 }
 
 function captureCommuneSnapshot(el) {
@@ -1010,10 +1244,11 @@ function renderHistory() {
     });
   });
   historyList.appendChild(loadMoreBtn);
+  initActionTooltips(historyList || document);
 }
 
 function getSelectedUserSectors() {
-  const value = sectorSelect ? Number(sectorSelect.value) : NaN;
+  const value = Number(state.selectedSector || "");
   if (Number.isNaN(value)) return [];
   return [value];
 }
@@ -1052,15 +1287,24 @@ function updateSectorSelectAvailability() {
 
 function updateSectorRequiredBadge() {
   if (!sectorRequiredBadge || !sectorSelect) return;
-  const isMissing = !sectorSelect.value;
+  const isMissing = !state.selectedSector;
   sectorRequiredBadge.classList.toggle("hidden", !isMissing);
 }
 
 function updateLegendActive() {
-  const selected = sectorSelect ? sectorSelect.value : "";
+  const selected = state.selectedSector || "";
   const rows = document.querySelectorAll(".legend-row[data-sector]");
   rows.forEach((row) => {
     row.classList.toggle("active", row.dataset.sector === selected);
+  });
+}
+
+function syncLegendColors() {
+  Object.entries(sectorColors).forEach(([sectorId, color]) => {
+    const dots = document.querySelectorAll(`.dot.s${sectorId}`);
+    dots.forEach((dot) => {
+      dot.style.backgroundColor = color;
+    });
   });
 }
 
@@ -1218,6 +1462,29 @@ function getCommuneCountByUser() {
   return counts;
 }
 
+function getOwnedCommunesCount(userName) {
+  if (!userName) return 0;
+  return state.communes.reduce((acc, entry) => {
+    const owner = entry.element.getAttribute("data-owner") || "";
+    return acc + (owner === userName ? 1 : 0);
+  }, 0);
+}
+
+function getOwnedSectorsForUser(userName) {
+  const sectors = new Set();
+  if (!userName) return sectors;
+  state.communes.forEach((entry) => {
+    const owner = entry.element.getAttribute("data-owner") || "";
+    const sector = entry.element.getAttribute("data-sector") || "";
+    if (owner !== userName || !sector) return;
+    const asNum = Number(sector);
+    if (Number.isInteger(asNum) && asNum >= 1 && asNum <= 9) {
+      sectors.add(asNum);
+    }
+  });
+  return sectors;
+}
+
 function getDisplayUsers(communeCounts) {
   let users = state.users.slice();
   if (state.usersQuickView === "busy") {
@@ -1237,9 +1504,105 @@ function getDisplayUsers(communeCounts) {
   return users;
 }
 
+const ACTION_TOOLTIP_BY_ID = {
+  logoutBtn: "Se déconnecter du compte en cours",
+  searchInput: "Saisir le nom ou le code INSEE d'une commune",
+  searchBtn: "Centrer la carte sur la commune recherchée",
+  exportPdfMapBtn: "Exporter la carte en PDF",
+  undoBtn: "Annuler la dernière action",
+  redoBtn: "Rétablir la dernière action annulée",
+  exportPdfReportBtn: "Exporter un rapport PDF",
+  exportCsvBtn: "Exporter les données visibles en CSV",
+  clearDemarchesBtn: "Retirer le statut démarchée sur toutes les communes",
+  resetBtn: "Réinitialiser les affectations des communes",
+  resetViewBtn: "Réinitialiser le cadrage de la carte",
+  toggleDemarcheBtn: "Marquer ou retirer le statut démarchée",
+  sectorSelect: "Choisir le secteur à affecter",
+  confirmSectorBtn: "Valider le secteur sélectionné",
+  anchorInput: "Saisir la commune d'ancrage utilisée pour les distances",
+  confirmAnchorBtn: "Valider la commune d'ancrage",
+  filterSectorSelect: "Filtrer les communes par secteur",
+  filterUserSelect: "Filtrer les communes par utilisateur",
+  filterDemarcheSelect: "Filtrer les communes selon le démarchage",
+  toggleLeftPanelBtn: "Afficher ou masquer le panneau gauche",
+  toggleRightPanelBtn: "Afficher ou masquer le panneau droit",
+  contextToggleDemarche: "Marquer ou retirer démarchée via le menu contextuel",
+  loginEmail: "Adresse email du compte",
+  loginPassword: "Mot de passe du compte",
+  forgotPasswordBtn: "Envoyer un email de réinitialisation du mot de passe",
+  profileDisplayName: "Prénom affiché dans l'application",
+};
+
+function tooltipForChip(el) {
+  if (el.hasAttribute("data-user-view")) {
+    const value = el.getAttribute("data-user-view");
+    if (value === "all") return "Afficher tous les utilisateurs";
+    if (value === "busy") return "Afficher les utilisateurs ayant des communes";
+    if (value === "idle") return "Afficher les utilisateurs sans commune";
+  }
+  if (el.hasAttribute("data-user-sort")) {
+    const value = el.getAttribute("data-user-sort");
+    if (value === "alpha") return "Trier les utilisateurs par ordre alphabétique";
+    if (value === "load") return "Trier les utilisateurs par nombre de communes";
+  }
+  if (el.hasAttribute("data-history-filter")) {
+    const value = el.getAttribute("data-history-filter");
+    if (value === "all") return "Afficher tout l'historique";
+    if (value === "demarche") return "Filtrer l'historique sur le démarchage";
+    if (value === "affect") return "Filtrer l'historique sur les affectations";
+    if (value === "system") return "Filtrer l'historique système";
+  }
+  if (el.hasAttribute("data-stats-view")) {
+    const value = el.getAttribute("data-stats-view");
+    if (value === "all") return "Afficher toutes les statistiques";
+    if (value === "top5") return "Afficher le top 5 des utilisateurs";
+  }
+  return "";
+}
+
+function tooltipForSectionToggle(el) {
+  const sectionId = el.getAttribute("data-toggle-section") || "";
+  if (!sectionId) return "";
+  return `Afficher ou masquer la section ${sectionId}`;
+}
+
+function inferActionTooltip(el) {
+  if (!el) return "";
+  const id = el.id || "";
+  if (id && ACTION_TOOLTIP_BY_ID[id]) return ACTION_TOOLTIP_BY_ID[id];
+
+  if (el.classList && el.classList.contains("chip-btn")) {
+    return tooltipForChip(el);
+  }
+  if (el.classList && el.classList.contains("section-toggle")) {
+    return tooltipForSectionToggle(el);
+  }
+
+  const aria = (el.getAttribute("aria-label") || "").trim();
+  if (aria) return aria;
+
+  const label = (el.textContent || "").trim().replace(/\s+/g, " ");
+  if (label) return label;
+  return "";
+}
+
+function initActionTooltips(root = document) {
+  if (!root || typeof root.querySelectorAll !== "function") return;
+  root
+    .querySelectorAll("button, summary, input, select, .section-toggle, .chip-btn")
+    .forEach((el) => {
+      const existing = (el.getAttribute("title") || "").trim();
+      if (existing) return;
+      const tooltip = inferActionTooltip(el);
+      if (!tooltip) return;
+      el.setAttribute("title", tooltip);
+    });
+}
+
 function setActiveChip(container, attrName, value) {
   if (!container) return;
   container.querySelectorAll(".chip-btn").forEach((btn) => {
+    if (!btn.hasAttribute(attrName)) return;
     const isActive = btn.getAttribute(attrName) === value;
     btn.classList.toggle("active", isActive);
     btn.setAttribute("aria-pressed", isActive ? "true" : "false");
@@ -1342,12 +1705,45 @@ function renderUsers() {
   updateSectorRequiredBadge();
   renderUserCounts(communeCounts);
   renderDashboard();
+  initActionTooltips(usersList || document);
 }
 
 function renderUserCounts(communeCounts = getCommuneCountByUser()) {
   if (!userCountsList) return;
   userCountsList.innerHTML = "";
-  const displayUsers = getDisplayUsers(communeCounts);
+  const usersByName = new Map();
+  state.users.forEach((user) => {
+    if (!user || !user.name) return;
+    usersByName.set(user.name, user);
+  });
+  communeCounts.forEach((_, ownerName) => {
+    if (!ownerName || usersByName.has(ownerName)) return;
+    usersByName.set(ownerName, {
+      _id: "",
+      name: ownerName,
+      sectors: [],
+      anchorCode: "",
+      anchorName: "",
+      anchorLat: undefined,
+      anchorLon: undefined,
+    });
+  });
+  const allUsers = [...usersByName.values()];
+  let displayUsers = allUsers.slice();
+  if (state.usersQuickView === "busy") {
+    displayUsers = displayUsers.filter((user) => (communeCounts.get(user.name) || 0) > 0);
+  } else if (state.usersQuickView === "idle") {
+    displayUsers = displayUsers.filter((user) => (communeCounts.get(user.name) || 0) === 0);
+  }
+  if (state.usersQuickSort === "load") {
+    displayUsers.sort((a, b) => {
+      const countDelta = (communeCounts.get(b.name) || 0) - (communeCounts.get(a.name) || 0);
+      if (countDelta !== 0) return countDelta;
+      return a.name.localeCompare(b.name);
+    });
+  } else {
+    displayUsers.sort((a, b) => a.name.localeCompare(b.name));
+  }
   if (!displayUsers.length) {
     userCountsList.innerHTML = "<div class='hint'>Aucun utilisateur.</div>";
     return;
@@ -1467,6 +1863,7 @@ function renderDashboard() {
       row.appendChild(track);
       statsUserProgress.appendChild(row);
     });
+  initActionTooltips(statsUserProgress || document);
 }
 
 function renderConnectedUsers() {
@@ -1485,9 +1882,11 @@ function renderConnectedUsers() {
     item.appendChild(nameEl);
     connectedUsersList.appendChild(item);
   });
+  initActionTooltips(connectedUsersList || document);
 }
 
 function addUser() {
+  if (!userNameInput) return;
   const name = normalizeUserName(userNameInput.value || "");
   if (!name) {
     setSyncStatus("Nom utilisateur obligatoire", "error");
@@ -1592,15 +1991,32 @@ function handleCommuneClick(el) {
     setSyncStatus("Commune sélectionnée (choisir un utilisateur actif)", "error");
     return;
   }
-  const sector = sectorSelect.value;
+  const sector = state.selectedSector || "";
   if (!sector) {
     // Commune is selected; sector assignment is optional.
     setSyncStatus("Commune sélectionnée", "ok");
     return;
   }
+  const ownedSectors = getOwnedSectorsForUser(activeUser);
+  const selectedSectorNum = Number(sector);
+  if (ownedSectors.size > 0 && !ownedSectors.has(selectedSectorNum)) {
+    const lockedSector = [...ownedSectors][0];
+    setSyncStatus(
+      `Secteur verrouillé: tu as déjà des communes sur ${sectorLabels[lockedSector] || lockedSector}.`,
+      "error"
+    );
+    if (sectorSelect) sectorSelect.value = String(lockedSector);
+    state.selectedSector = String(lockedSector);
+    updateLegendActive();
+    updateSectorSelectAvailability();
+    updateSectorRequiredBadge();
+    if (state.current) updateInfo(state.current);
+    return;
+  }
   const currentSector = el.getAttribute("data-sector") || "";
   const currentOwner = el.getAttribute("data-owner") || "";
   const isOwnedByOther = currentOwner && currentOwner !== activeUser;
+  const isAssignedWithoutOwner = currentSector && !currentOwner;
   const shouldClear =
     currentSector &&
     currentSector === sector &&
@@ -1610,6 +2026,11 @@ function handleCommuneClick(el) {
     setSyncStatus(`Attribuée à ${currentOwner}`, "error");
     return;
   }
+  // Legacy/invalid state guard: colored commune with no owner is treated as already assigned.
+  if (isAssignedWithoutOwner) {
+    setSyncStatus("Commune déjà attribuée (propriétaire manquant).", "error");
+    return;
+  }
   if (!lockCommuneForActiveUser(el)) return;
 
   const before = captureCommuneSnapshot(el);
@@ -1617,6 +2038,10 @@ function handleCommuneClick(el) {
   if (shouldClear) {
     setSector(el, "", { save: false });
     setOwner(el, "", { save: false });
+    const clearedCode = el.getAttribute("data-code") || "";
+    if (clearedCode) {
+      releaseLockForCode(clearedCode, { save: false });
+    }
     scheduleSave();
   } else {
     setSector(el, sector, { save: false });
@@ -1999,6 +2424,7 @@ function renderAnchorSuggestions(query) {
       event.preventDefault();
       if (anchorInput) anchorInput.value = entry.name;
       anchorSuggestions.classList.add("hidden");
+      setSyncStatus(`Ancrage ${entry.name} en attente. Clique sur "Valider ancrage".`, "ok");
     });
     anchorSuggestions.appendChild(item);
   });
@@ -2513,7 +2939,7 @@ function refreshCurrentLock() {
   const lock = getLockEntry(code);
   if (!lock || lock.by !== activeUser) return;
   state.locks[code] = { by: activeUser, at: Date.now() };
-  scheduleSave();
+  scheduleFastLockSync();
 }
 
 function initLockHeartbeat() {
@@ -2552,7 +2978,15 @@ function scheduleSave() {
 }
 
 async function saveMetaState() {
-  return firestoreSync.saveMetaState();
+  if (metaWritePromise) return metaWritePromise;
+  state.metaWriteInFlight = true;
+  metaWritePromise = (async () => firestoreSync.saveMetaState())();
+  try {
+    return await metaWritePromise;
+  } finally {
+    metaWritePromise = null;
+    state.metaWriteInFlight = false;
+  }
 }
 
 async function saveUsersState() {
@@ -2627,10 +3061,15 @@ async function saveCommunesState() {
 
 async function saveState() {
   if (!state.authReady || state.isApplyingRemote) return;
+  if (state.saveInFlight) {
+    state.pendingSave = true;
+    return;
+  }
   if (!state.remoteReady) {
     state.pendingSave = true;
     return;
   }
+  state.saveInFlight = true;
   state.pendingSave = false;
   clearExpiredLocks({ save: false });
   const demarchedCount = state.communes.reduce(
@@ -2663,11 +3102,18 @@ async function saveState() {
     }
     const codeText = code ? ` (${code})` : "";
     setSyncStatus(`Erreur de synchro${codeText}`, "error");
+  } finally {
+    state.saveInFlight = false;
+    if (state.pendingSave && state.authReady && !state.isApplyingRemote) {
+      if (state.saveTimer) clearTimeout(state.saveTimer);
+      state.saveTimer = setTimeout(saveState, 80);
+    }
   }
 }
 
 function bindUI() {
   initActionsMenu(document, actionsMore);
+  syncLegendColors();
   initCollapsibleSections(document, {
     storage: localStorage,
     storageKey: COLLAPSIBLE_SECTIONS_STORAGE_KEY,
@@ -2688,11 +3134,62 @@ function bindUI() {
   }
 
   sectorSelect.addEventListener("change", (event) => {
-    state.selectedSector = event.target.value;
-    updateSectorSelectAvailability();
-    updateLegendActive();
-    updateSectorRequiredBadge();
+    const pending = String(event.target.value || "");
+    if (!pending) {
+      setSyncStatus("Sélection de secteur vidée. Clique sur \"Valider secteur\" pour confirmer.", "ok");
+      return;
+    }
+    if (!isValidSectorValue(pending)) {
+      setSyncStatus("Secteur invalide", "error");
+      return;
+    }
+    setSyncStatus(`Secteur ${sectorLabels[pending] || pending} en attente. Clique sur \"Valider secteur\".`, "ok");
   });
+  if (confirmSectorBtn) {
+    confirmSectorBtn.addEventListener("click", () => {
+      if (!auth.currentUser || !state.profileReady) {
+        setSyncStatus("Connexion requise pour valider le secteur", "error");
+        return;
+      }
+      const pending = sectorSelect ? String(sectorSelect.value || "") : "";
+      if (!isValidSectorValue(pending)) {
+        setSyncStatus("Choisis un secteur valide avant validation", "error");
+        return;
+      }
+      const activeUser = getActiveUserName();
+      const current = String(state.selectedSector || "");
+      const ownedSectors = getOwnedSectorsForUser(activeUser);
+      const pendingNum = Number(pending);
+      if (ownedSectors.size > 0 && !ownedSectors.has(pendingNum)) {
+        const lockedSector = [...ownedSectors][0];
+        setSyncStatus(
+          `Changement de secteur refusé: des communes t'appartiennent déjà sur ${sectorLabels[lockedSector] || lockedSector}.`,
+          "error"
+        );
+        if (sectorSelect) sectorSelect.value = String(current || lockedSector);
+        return;
+      }
+      if (pending !== current) {
+        const ownedCommunes = getOwnedCommunesCount(activeUser);
+        if (ownedCommunes > 0) {
+          setSyncStatus(
+            `Changement de secteur refusé: ${ownedCommunes} commune(s) déjà affectée(s). Retire d'abord tes communes.`,
+            "error"
+          );
+          if (sectorSelect) sectorSelect.value = current;
+          return;
+        }
+      }
+      saveProfileSector(pending)
+        .then(() => {
+          setSyncStatus(`Secteur ${sectorLabels[pending] || pending} validé`, "ok");
+        })
+        .catch((err) => {
+          console.error("Profile sector save error:", err);
+          setSyncStatus("Erreur validation secteur", "error");
+        });
+    });
+  }
 
   searchBtn.addEventListener("click", () => {
     const el = findCommune(searchInput.value);
@@ -2724,6 +3221,33 @@ function bindUI() {
   if (anchorInput) {
     anchorInput.addEventListener("input", () => {
       renderAnchorSuggestions(anchorInput.value);
+    });
+    anchorInput.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter") return;
+      event.preventDefault();
+      if (confirmAnchorBtn) confirmAnchorBtn.click();
+    });
+  }
+  if (confirmAnchorBtn) {
+    confirmAnchorBtn.addEventListener("click", () => {
+      if (!auth.currentUser || !state.profileReady) {
+        setSyncStatus("Connexion requise pour valider l'ancrage", "error");
+        return;
+      }
+      const entry = getCommuneEntryFromInput((anchorInput && anchorInput.value) || "");
+      if (!entry || !entry.geo) {
+        setSyncStatus("Commune d'ancrage introuvable", "error");
+        return;
+      }
+      saveProfileAnchor(entry)
+        .then(() => {
+          if (anchorSuggestions) anchorSuggestions.classList.add("hidden");
+          setSyncStatus("Ancrage profil validé", "ok");
+        })
+        .catch((err) => {
+          console.error("Profile anchor save error:", err);
+          setSyncStatus("Erreur ancrage profil", "error");
+        });
     });
   }
 
@@ -2779,13 +3303,15 @@ function bindUI() {
     });
   }
 
-  addUserBtn.addEventListener("click", addUser);
-  userNameInput.addEventListener("keydown", (event) => {
-    if (event.key === "Enter") {
-      event.preventDefault();
-      addUser();
-    }
-  });
+  if (addUserBtn) addUserBtn.addEventListener("click", addUser);
+  if (userNameInput) {
+    userNameInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        addUser();
+      }
+    });
+  }
 
   if (activeUserSelect) {
     activeUserSelect.addEventListener("change", () => {
@@ -2949,10 +3475,11 @@ function bindUI() {
 
     if (/^[1-9]$/.test(event.key)) {
       sectorSelect.value = event.key;
-      state.selectedSector = event.key;
+      setSyncStatus(`Secteur ${sectorLabels[event.key] || event.key} en attente. Clique sur \"Valider secteur\".`, "ok");
     }
   });
   updateUndoRedoButtons();
+  initActionTooltips(document);
 }
 
 function setSyncStatus(text, type) {
@@ -3000,6 +3527,7 @@ async function loadSvg() {
   renderUsers();
   renderSuggestions(searchInput.value);
   initRealtime();
+  syncLegendColors();
   applyFilters();
   updateLegendActive();
   updateSectorRequiredBadge();

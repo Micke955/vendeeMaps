@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Vendée – Carte des communes</title>
-    <link rel="stylesheet" href="./style.css?v=20260222-10" />
+    <link rel="stylesheet" href="./style.css?v=20260222-36" />
   </head>
   <body>
     <a class="skip-link" href="#mainContent">Aller au contenu principal</a>
@@ -12,8 +12,8 @@
       <header class="topbar">
         <div class="topbar-head">
           <div class="brand">
-            <div class="brand-title">Vendée</div>
-            <div class="brand-subtitle">Carte interactive des communes</div>
+            <div class="brand-title">Plume du Temps</div>
+            <div class="brand-subtitle">Carte interactive des communes de Vendée</div>
           </div>
           <div class="top-status">
             <div id="currentUserBadge" class="user-badge hidden">
@@ -47,24 +47,9 @@
             <div id="searchSuggestions" class="suggestions hidden"></div>
           </div>
 
-          <div class="top-block top-selected">
-            <div class="selected-title">Commune sélectionnée</div>
-            <div id="infoName" class="selected-name">—</div>
-            <div id="infoInsee" class="selected-meta">INSEE: —</div>
-            <div id="infoSector" class="selected-meta">Secteur: —</div>
-            <div id="infoDistance" class="selected-meta" title="Distance à vol d'oiseau depuis l'ancrage">
-              Distance: —
-            </div>
-            <div id="infoDemarche" class="selected-meta">Démarchée: —</div>
-            <div id="infoCollab" class="selected-meta selected-collab">Collaboration: —</div>
-            <button id="toggleDemarcheBtn" class="btn small" title="Marquer ou retirer le statut démarchée" aria-label="Marquer ou retirer le statut démarchée de la commune sélectionnée">
-              Marquer démarchée
-            </button>
-          </div>
-
           <div class="top-block top-actions">
             <div class="selected-title">Actions</div>
-            <div class="top-actions-primary">
+            <div class="top-actions-inline">
               <button id="exportPdfMapBtn" class="btn action-btn primary" title="Exporter la carte en PDF" aria-label="Exporter la carte en PDF">
                 <span class="btn-icon" aria-hidden="true">PDF</span>
                 <span class="btn-label">Exporter carte</span>
@@ -77,8 +62,6 @@
                 <span class="btn-icon" aria-hidden="true">R</span>
                 <span class="btn-label">Rétablir</span>
               </button>
-            </div>
-            <div class="top-actions-secondary">
               <div class="theme-toggle" title="Basculer en mode sombre">
                 <span class="theme-label">Dark</span>
                 <label class="switch">
@@ -124,6 +107,21 @@
 
       <main class="main" id="mainContent">
         <aside class="panel panel-left">
+          <div class="section top-selected selected-panel">
+            <div class="selected-title">Commune sélectionnée</div>
+            <div id="infoName" class="selected-name">—</div>
+            <div id="infoInsee" class="selected-meta">INSEE: —</div>
+            <div id="infoSector" class="selected-meta">Secteur: —</div>
+            <div id="infoDistance" class="selected-meta" title="Distance à vol d'oiseau depuis l'ancrage">
+              Distance: —
+            </div>
+            <div id="infoDemarche" class="selected-meta">Démarchée: —</div>
+            <div id="infoCollab" class="selected-meta selected-collab">Collaboration: —</div>
+            <button id="toggleDemarcheBtn" class="btn small" title="Marquer ou retirer le statut démarchée" aria-label="Marquer ou retirer le statut démarchée de la commune sélectionnée">
+              Marquer démarchée
+            </button>
+          </div>
+
           <div class="section collapsible-section" data-collapsible="users">
             <button
               class="section-toggle"
@@ -137,16 +135,13 @@
             </button>
             <div id="usersContent" class="collapsible-content">
               <div id="usersQuickChips" class="chips" aria-label="Filtres utilisateurs">
-                <button class="chip-btn active" type="button" data-user-view="all" aria-label="Afficher tous les utilisateurs">Tous</button>
-                <button class="chip-btn" type="button" data-user-view="busy" aria-label="Afficher les utilisateurs actifs">Actifs</button>
-                <button class="chip-btn" type="button" data-user-view="idle" aria-label="Afficher les utilisateurs sans commune">Sans commune</button>
-                <button class="chip-btn" type="button" data-user-sort="alpha" aria-label="Trier les utilisateurs par ordre alphabétique">A-Z</button>
-                <button class="chip-btn" type="button" data-user-sort="load" aria-label="Trier les utilisateurs par charge">Charge</button>
+                <button class="chip-btn active" type="button" data-user-view="all" title="Afficher tous les utilisateurs" aria-label="Afficher tous les utilisateurs">Tous</button>
+                <button class="chip-btn" type="button" data-user-view="busy" title="Afficher les utilisateurs ayant au moins une commune" aria-label="Afficher les utilisateurs actifs">Actifs</button>
+                <button class="chip-btn" type="button" data-user-view="idle" title="Afficher les utilisateurs sans commune affectée" aria-label="Afficher les utilisateurs sans commune">Sans commune</button>
+                <button class="chip-btn" type="button" data-user-sort="alpha" title="Trier les utilisateurs par ordre alphabétique" aria-label="Trier les utilisateurs par ordre alphabétique">A-Z</button>
+                <button class="chip-btn" type="button" data-user-sort="load" title="Trier les utilisateurs par nombre de communes" aria-label="Trier les utilisateurs par charge">Charge</button>
               </div>
-              <label for="activeUserSelect" class="label">Utilisateur actif</label>
-              <select id="activeUserSelect" class="select">
-                <option value="">—</option>
-              </select>
+              <div class="hint">Utilisateur actif: compte connecté automatiquement.</div>
               <label for="sectorSelect" class="label">Secteur sélectionné</label>
               <select id="sectorSelect" class="select">
                 <option value="">—</option>
@@ -160,20 +155,13 @@
                 <option value="8">Nord-Ouest</option>
                 <option value="9">Centre</option>
               </select>
+              <div class="row">
+                <button id="confirmSectorBtn" class="btn small" type="button" aria-label="Valider le secteur sélectionné">
+                  Valider secteur
+                </button>
+              </div>
               <div id="sectorRequiredBadge" class="hint error hidden">
                 Sélectionner un secteur pour colorier.
-              </div>
-              <div class="row">
-                <input
-                  id="userNameInput"
-                  class="input"
-                  type="text"
-                  placeholder="Prénom utilisateur"
-                  title="Prénom du nouvel utilisateur"
-                />
-                <button id="addUserBtn" class="btn" title="Ajouter l'utilisateur" aria-label="Ajouter l'utilisateur">
-                  Ajouter
-                </button>
               </div>
               <label for="anchorInput" class="label">Commune d'ancrage</label>
               <input
@@ -184,8 +172,11 @@
                 title="Commune de reference pour les distances"
               />
               <div id="anchorSuggestions" class="suggestions hidden"></div>
-              <div class="hint">Tape un nom ou un code INSEE, puis choisis la commune.</div>
+              <div class="hint">Tape un nom ou un code INSEE, puis choisis la commune pour enregistrer l'ancrage de ton profil.</div>
               <div class="row">
+                <button id="confirmAnchorBtn" class="btn small" type="button" aria-label="Valider le point d'ancrage">
+                  Valider ancrage
+                </button>
               </div>
               <div id="usersList" class="users-list"></div>
               <div class="label">Connectés</div>
@@ -206,8 +197,8 @@
             </button>
             <div id="filtersContent" class="collapsible-content">
               <div id="filtersActiveBadge" class="hint hidden"></div>
-              <label for="filterSectorSelect" class="label">Par secteur</label>
-              <select id="filterSectorSelect" class="select">
+              <label for="filterSectorSelect" class="label" title="Filtrer les communes selon le secteur">Par secteur</label>
+              <select id="filterSectorSelect" class="select" title="Filtrer les communes selon le secteur">
                 <option value="all">Tous</option>
                 <option value="1">Nord</option>
                 <option value="2">Nord-Est</option>
@@ -219,12 +210,12 @@
                 <option value="8">Nord-Ouest</option>
                 <option value="9">Centre</option>
               </select>
-              <label for="filterUserSelect" class="label">Par utilisateur</label>
-              <select id="filterUserSelect" class="select">
+              <label for="filterUserSelect" class="label" title="Filtrer les communes selon l'utilisateur propriétaire">Par utilisateur</label>
+              <select id="filterUserSelect" class="select" title="Filtrer les communes selon l'utilisateur propriétaire">
                 <option value="all">Tous</option>
               </select>
-              <label for="filterDemarcheSelect" class="label">Démarchage</label>
-              <select id="filterDemarcheSelect" class="select">
+              <label for="filterDemarcheSelect" class="label" title="Filtrer les communes selon le statut démarchée">Démarchage</label>
+              <select id="filterDemarcheSelect" class="select" title="Filtrer les communes selon le statut démarchée">
                 <option value="all">Tous</option>
                 <option value="yes">Démarchées</option>
                 <option value="no">Non démarchées</option>
@@ -267,10 +258,10 @@
             </button>
             <div id="historyContent" class="collapsible-content">
               <div id="historyQuickChips" class="chips" aria-label="Filtres historique">
-                <button class="chip-btn active" type="button" data-history-filter="all" aria-label="Afficher tout l'historique">Tout</button>
-                <button class="chip-btn" type="button" data-history-filter="demarche" aria-label="Filtrer l'historique sur le démarchage">Démarchage</button>
-                <button class="chip-btn" type="button" data-history-filter="affect" aria-label="Filtrer l'historique sur les affectations">Affectation</button>
-                <button class="chip-btn" type="button" data-history-filter="system" aria-label="Filtrer l'historique système">Système</button>
+                <button class="chip-btn active" type="button" data-history-filter="all" title="Afficher tout l'historique" aria-label="Afficher tout l'historique">Tout</button>
+                <button class="chip-btn" type="button" data-history-filter="demarche" title="Filtrer l'historique sur le démarchage" aria-label="Filtrer l'historique sur le démarchage">Démarchage</button>
+                <button class="chip-btn" type="button" data-history-filter="affect" title="Filtrer l'historique sur les affectations" aria-label="Filtrer l'historique sur les affectations">Affectation</button>
+                <button class="chip-btn" type="button" data-history-filter="system" title="Filtrer l'historique système" aria-label="Filtrer l'historique système">Système</button>
               </div>
               <div id="historyList" class="history-list"></div>
             </div>
@@ -359,6 +350,12 @@
     </div>
 
     <div id="loginOverlay" class="login-overlay">
+      <div class="neon-bg" aria-hidden="true">
+        <div class="glowing"><span style="--i:1;"></span><span style="--i:2;"></span><span style="--i:3;"></span></div>
+        <div class="glowing"><span style="--i:1;"></span><span style="--i:2;"></span><span style="--i:3;"></span></div>
+        <div class="glowing"><span style="--i:1;"></span><span style="--i:2;"></span><span style="--i:3;"></span></div>
+        <div class="glowing"><span style="--i:1;"></span><span style="--i:2;"></span><span style="--i:3;"></span></div>
+      </div>
       <form id="loginForm" class="login-card" autocomplete="on">
         <h2>Connexion requise</h2>
         <p>Connecte-toi avec ton compte autorisé.</p>
@@ -366,12 +363,27 @@
         <input id="loginEmail" class="input" type="email" required autocomplete="username" />
         <label for="loginPassword" class="label">Mot de passe</label>
         <input id="loginPassword" class="input" type="password" required autocomplete="current-password" />
+        <button
+          id="forgotPasswordBtn"
+          class="btn login-link-btn ghost"
+          type="button"
+          aria-label="Envoyer un email de réinitialisation du mot de passe"
+        >
+          Mot de passe oublié ?
+        </button>
         <button class="btn primary" type="submit">Se connecter</button>
+        <div id="loginInfo" class="hint" role="status" aria-live="polite"></div>
         <div id="loginError" class="hint error" role="alert" aria-live="polite"></div>
       </form>
     </div>
 
     <div id="profileOverlay" class="login-overlay hidden">
+      <div class="neon-bg" aria-hidden="true">
+        <div class="glowing"><span style="--i:1;"></span><span style="--i:2;"></span><span style="--i:3;"></span></div>
+        <div class="glowing"><span style="--i:1;"></span><span style="--i:2;"></span><span style="--i:3;"></span></div>
+        <div class="glowing"><span style="--i:1;"></span><span style="--i:2;"></span><span style="--i:3;"></span></div>
+        <div class="glowing"><span style="--i:1;"></span><span style="--i:2;"></span><span style="--i:3;"></span></div>
+      </div>
       <form id="profileForm" class="login-card" autocomplete="off">
         <h2>Profil requis</h2>
         <p>Renseigne ton prénom pour finaliser l'accès.</p>
@@ -383,6 +395,6 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
-    <script type="module" src="./app.js?v=20260222-21"></script>
+    <script type="module" src="./app.js?v=20260222-25"></script>
   </body>
 </html>
